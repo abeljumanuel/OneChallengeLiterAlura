@@ -11,19 +11,23 @@ import com.alura.literalura.service.ConvierteDatos;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.text.NumberFormat;
+import java.text.ParsePosition;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class Principal {
     private Scanner teclado = new Scanner(System.in);
     private ConsumoAPI consumoApi = new ConsumoAPI();
     private final String URL_BASE = "https://gutendex.com/books/?search=";
     private ConvierteDatos conversor = new ConvierteDatos();
-    private List<DatosBook> datosBookList = new ArrayList<>();
     private LibroRepository libroRepository;
     private AutorRepository autorRepository;
     private List<Libro> librosList;
     private List<Autor> autoresList;
     private Optional<Autor> autorBuscado;
+    private Optional<Libro> libroBuscado;
 
     public Principal(LibroRepository libroRepository, AutorRepository autorRepository) {
         this.libroRepository = libroRepository;
@@ -31,11 +35,11 @@ public class Principal {
     }
 
     public void muestraElMenu() {
-        var opcion = -1;
+        int opcion = -1;
         while (opcion != 0) {
-            var menu = """
+            String menu = """
                     Elija la opción a través de su número;
-                    1 - Buscar libro por titulo
+                    1 - Buscar libro por título
                     2 - Listar libros registrados
                     3 - Listar autores registrados
                     4 - Listar autores vivos en un determinado año
@@ -43,8 +47,20 @@ public class Principal {
                     0 - Salir
                     """;
             System.out.println(menu);
-            opcion = teclado.nextInt();
-            teclado.nextLine();
+
+            try {
+                opcion = teclado.nextInt();
+                teclado.nextLine(); // Consume the newline character left by nextInt()
+            } catch (InputMismatchException ime) {
+                System.out.println("Opción inválida. Por favor, ingrese un número entero.");
+                teclado.nextLine(); // Clear the invalid input from the scanner
+                continue; // Restart the loop to show the menu again
+            }
+
+            if (opcion < 0 || opcion > 5) {
+                System.out.println("Opción inválida. Por favor, elija una opción válida.");
+                continue; // Restart the loop to show the menu again
+            }
 
             switch (opcion) {
                 case 1:
@@ -62,11 +78,13 @@ public class Principal {
                 case 5:
                     mostrarLibrosPorIdioma();
                     break;
+                case 0:
+                    System.out.println("Saliendo del Sistema ...");
+                    break;
                 default:
                     System.out.println("Opción inválida");
             }
         }
-
     }
 
     private Gutendex getDatosLibro() {
@@ -87,20 +105,29 @@ public class Principal {
         try {
             DatosBook datosBook = datos.datosBook().get(0);
             autorBuscado = autorRepository.getAutorByName(datosBook.autores().get(0).name());
+            libroBuscado = libroRepository.getLibroByTitulo(datosBook.titulo());
 
-            Autor autor;
-            if (autorBuscado.isPresent()){
-                autor = autorBuscado.get();
+            if (libroBuscado.isPresent()) {
+                System.out.println("""
+            
+            El libro ya existe en Base de Datos
+            -------------------""");
             } else {
-                autor = new Autor(datosBook.autores().get(0));
-                autorRepository.save(autor);
+                Autor autor;
+                if (autorBuscado.isPresent()){
+                    autor = autorBuscado.get();
+                } else {
+                    autor = new Autor(datosBook.autores().get(0));
+                    autorRepository.save(autor);
+                }
+
+                Libro libro = new Libro(datosBook);
+                libro.setAutor(autor);
+
+                libroRepository.save(libro);
+                System.out.println(datos);
             }
 
-            Libro libro = new Libro(datosBook);
-            libro.setAutor(autor);
-            System.out.println("Lo que se va a guardar : \n" + libro);
-            libroRepository.save(libro);
-            System.out.println(datos);
         } catch (Exception e) {
             System.out.println("""
             
@@ -139,14 +166,22 @@ public class Principal {
     }
 
     private void mostrarLibrosPorIdioma() {
-        System.out.println("""
-        Ingresa el idioma para buscar los libros:
-        es - español
-        en - inglés
-        fr - frances
-        pt - portugues
-        """);
-        var idioma = teclado.nextLine();
+        Set<String> validIdiomas = Set.of("es", "en", "fr", "pt");
+        String idioma;
+        do {
+            System.out.println("""
+                Ingresa el idioma para buscar los libros:
+                es - español
+                en - inglés
+                fr - frances
+                pt - portugues
+            """);
+            idioma = teclado.nextLine();
+            if (!validIdiomas.contains(idioma)) {
+                System.out.println("Idioma inválido. Por favor, ingresa una opción válida (es, en, fr, pt).");
+            }
+        } while (!validIdiomas.contains(idioma));
+
         librosList = libroRepository.findLibrosByIdiomaContains(idioma);
 
         librosList.stream()
